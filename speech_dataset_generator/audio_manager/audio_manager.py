@@ -50,15 +50,28 @@ class AudioManager:
             
         temp_output = noisy_audio  # Initial audio loading
 
-        for enhancement_type in enhancers:
+        for i, enhancement_type in enumerate(enhancers):
             print(f"enhancing audio with {enhancement_type}")
+            
+            # For the first enhancer, use original input file
+            # For subsequent enhancers, use the previous enhancer's output
+            input_file = temp_output
+            
+            # Create intermediate output filename for chaining (except for the last enhancer)
+            if i < len(enhancers) - 1:
+                # Create intermediate filename
+                base_name = os.path.splitext(output_audio_file)[0]
+                intermediate_output = f"{base_name}_{enhancement_type}_temp.wav"
+            else:
+                # Last enhancer writes to final output
+                intermediate_output = output_audio_file
 
             if enhancement_type == "deepfilternet":
-                temp_output = self.enhance_audio_deepfilternet(temp_output, output_audio_file)
+                temp_output = self.enhance_audio_deepfilternet(input_file, intermediate_output)
             elif enhancement_type == "resembleai":
-                temp_output = self.enhance_audio_resembleai(temp_output, output_audio_file)
+                temp_output = self.enhance_audio_resembleai(input_file, intermediate_output)
             elif enhancement_type == "mayavoz":
-                temp_output = self.enhance_audio_mayavoz(temp_output, output_audio_file)
+                temp_output = self.enhance_audio_mayavoz(input_file, intermediate_output)
         
         self.remove_sliences(temp_output, output_audio_file)
         
@@ -106,8 +119,21 @@ class AudioManager:
             List[np.ndarray]: List of audio chunks.
         """
         num_samples = len(audio)
-        num_chunks = num_samples // chunk_size
-        chunks = [audio[i * chunk_size: (i + 1) * chunk_size] for i in range(num_chunks)]
+        if chunk_size <= 0:
+            return [audio]
+
+        num_full_chunks = num_samples // chunk_size
+        chunks = [audio[i * chunk_size : (i + 1) * chunk_size] for i in range(num_full_chunks)]
+
+        # append the remaining part so that we don't drop short files or remainders
+        remainder_start = num_full_chunks * chunk_size
+        if remainder_start < num_samples:
+            chunks.append(audio[remainder_start:])
+
+        # Fallback: if the audio is shorter than the desired chunk_size, ensure one chunk exists
+        if not chunks:
+            chunks.append(audio)
+
         return chunks
     
     def enhance_audio_resembleai(self, noisy_audio, output_audio_file):

@@ -3,15 +3,41 @@ import pyphen
 from pypinyin import pinyin, Style
 from konlpy.tag import Okt
 
+# Try to import CAMeL Tools for Arabic support
+try:
+    from camel_tools.disambig.mle import MLEDisambiguator
+    from camel_tools.tokenizers.morphological import MorphologicalTokenizer
+    CAMEL_TOOLS_AVAILABLE = True
+except ImportError:
+    CAMEL_TOOLS_AVAILABLE = False
+
 class SpeechRate:
+    
+    def __init__(self):
+        # Lazy loading for Arabic models to avoid startup delays
+        self._mle_msa = None
+        self._tok_msa = None
             
     def check_language_availability(self, language):
         language_codes = list(set(code.split('_')[0] for code in pyphen.LANGUAGES.keys()))
-
-        language_codes.extend(['zh','ko'])
-
-        if language not in language_codes:
-            raise Exception("Available language codes:", language_codes)
+        language_codes.extend(['zh', 'ko', 'ar'])
+        return language in language_codes
+    
+    def _ensure_arabic_tokenizer(self):
+        """Lazily initialize Arabic models only when needed."""
+        if not CAMEL_TOOLS_AVAILABLE:
+            return False
+        
+        if self._tok_msa is None:
+            try:
+                self._mle_msa = MLEDisambiguator.pretrained('calima-msa-r13')
+                self._tok_msa = MorphologicalTokenizer(
+                    disambiguator=self._mle_msa, scheme='d3tok'
+                )
+                return True
+            except Exception:
+                return False
+        return True
     
     def count_syllables_in_pinyin(self, pinyin_text):
         # Convert Pinyin to numbered Pinyin (with tone numbers)
@@ -24,22 +50,36 @@ class SpeechRate:
 
     def get_total_syllables_per_word(self, word, language):
         
-        self.check_language_availability(language)
+        if not self.check_language_availability(language):
+            # Fallback: treat unsupported languages as 1 syllable per word
+            return 1
         
-        if 'zh' == language:
-            
+        if language == 'zh':
             pinyin_with_tone_numbers = pinyin(word, style=Style.TONE3)
-
             # Count the number of syllables
             total_syllables = sum([1 for s in pinyin_with_tone_numbers if s[0][-1].isdigit()])
         
-        elif 'ko' == language:
-            
+        elif language == 'ko':
             okt = Okt()
             morphemes = okt.morphs(word)
             total_syllables = len(morphemes)
-        else:
             
+        elif language == 'ar':
+            # Arabic syllable estimation using CAMeL Tools morphological tokenization
+            if self._ensure_arabic_tokenizer():
+                try:
+                    # Split word into morphological tokens (each token ≈ one syllable)
+                    tokens = self._tok_msa.tokenize([word])[0]
+                    total_syllables = max(1, len(tokens))
+                except Exception:
+                    # Fallback to simple heuristic if tokenization fails
+                    total_syllables = max(1, len(word) // 3)
+            else:
+                # Fallback: simple character-based heuristic for Arabic
+                total_syllables = max(1, len(word) // 3)
+                
+        else:
+            # Use pyphen for other supported languages
             dic = pyphen.Pyphen(lang=language)
             total_syllables = len(dic.inserted(word).split('-'))
             

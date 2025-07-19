@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from collections import Counter
 
 import whisperx
+from whisperx.diarize import DiarizationPipeline
 from pydub import AudioSegment
 from pyannote.audio import Model
 from scipy.spatial.distance import cdist
@@ -185,7 +186,7 @@ class DatasetGenerator:
         model_a, metadata = whisperx.load_align_model(language_code=language, device=device)
         result = whisperx.align(result["segments"], model_a, metadata, audio, device, return_char_alignments=False)
 
-        diarize_model = whisperx.DiarizationPipeline(model_name='pyannote/speaker-diarization@2.1', use_auth_token=HF_TOKEN, device=device)
+        diarize_model = DiarizationPipeline(model_name='pyannote/speaker-diarization@2.1', use_auth_token=HF_TOKEN, device=device)
         diarize_segments = diarize_model(audio)
                 
         result = whisperx.assign_word_speakers(diarize_segments, result)
